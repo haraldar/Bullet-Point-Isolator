@@ -71,11 +71,32 @@ export default class BulletPointIsolator extends Plugin {
 		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
 		// Using this function will automatically remove the event listener when this plugin is disabled.
 		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
+			// console.log(evt.targetNode?.parentNode);
+			if (evt.altKey && evt.ctrlKey){
+				console.log("clicked with alt together");
+				this.findAllBulletPoints(evt.target.parentNode);
+			}
 		});
 
 		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
 		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+	}
+
+	// Returns a list of div elements that are
+	findAllBulletPoints(elem) {
+		
+		let siblings = [elem];
+		let sibling = elem;
+		const getListNr = (toMatch) => toMatch.className.match(/HyperMD-list-line-(\d+)/)[1];
+		const origListNr = getListNr(elem);
+		while (sibling.nextSibling !== null && origListNr < getListNr(sibling.nextSibling)) {
+			sibling = sibling.nextSibling;
+			siblings.push(sibling);
+		}
+		console.log(siblings);
+		siblings.forEach((sibling) => {console.log(sibling.className);})
+		return siblings;
+
 	}
 
 	onunload() {

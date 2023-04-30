@@ -1,4 +1,7 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+const fs = require('fs');
+const path = require('path');
+
 
 // Remember to rename these classes and interfaces!
 
@@ -71,10 +74,32 @@ export default class BulletPointIsolator extends Plugin {
 		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
 		// Using this function will automatically remove the event listener when this plugin is disabled.
 		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			// console.log(evt.targetNode?.parentNode);
-			if (evt.altKey && evt.ctrlKey){
-				console.log("clicked with alt together");
-				this.findAllBulletPoints(evt.target.parentNode);
+
+			if (evt.altKey && evt.ctrlKey && this.getBulletPointNr(evt.target.parentNode)){
+
+				// Get all the bullet and subbullet points.
+				console.log("Bullet Point Isolator activated with Ctrl+Alt+Click.");
+				const bulletPoints = this.findAllBulletPoints(evt.target.parentNode);
+
+				// Create the text from the bullet.
+				const mainOffset = bulletPoints[0].offset;
+				const bulletPointContents = bulletPoints.map(bp => "\t".repeat(bp.offset - mainOffset) + bp.bullet);
+				const bulletPointsText = bulletPointContents.join("\n");
+
+				// Create the temporary file if it doesnt exist.
+				const isolatedFileName = "isolated.md";
+				const isolatedFileAbstract = this.app.vault.getAbstractFileByPath(isolatedFileName);
+				if (isolatedFileAbstract)
+					this.app.vault.delete(isolatedFileAbstract);
+
+				// Write the bullets to the temporary file.
+				this.app.vault.create(isolatedFileName, bulletPointsText);
+
+
+				// Open the file in Obsidian editor using the obsidian://open protocol.
+				const vaultName = this.app.vault.getName();
+				const fileURI = encodeURI(`obsidian://open?vault=${vaultName}&file=${isolatedFileName}`);
+				window.open(fileURI);
 			}
 		});
 
@@ -82,21 +107,30 @@ export default class BulletPointIsolator extends Plugin {
 		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
 	}
 
+	getBulletPointNr(elem) {
+		const match = elem.className.match(/HyperMD-list-line-(\d+)/);
+		return match ? match[1] : null;
+	}
+
 	// Returns a list of div elements that are
 	findAllBulletPoints(elem) {
-		
-		let siblings = [elem];
 		let sibling = elem;
-		const getListNr = (toMatch) => toMatch.className.match(/HyperMD-list-line-(\d+)/)[1];
-		const origListNr = getListNr(elem);
-		while (sibling.nextSibling !== null && origListNr < getListNr(sibling.nextSibling)) {
+		const origListNr = this.getBulletPointNr(sibling);
+		let siblings = [{
+			offset: origListNr,
+			bullet: sibling.textContent.trim(),
+			element: sibling
+		}];
+		while (sibling.nextSibling !== null && origListNr < this.getBulletPointNr(sibling.nextSibling)) {
 			sibling = sibling.nextSibling;
-			siblings.push(sibling);
+			siblings.push({
+				offset: this.getBulletPointNr(sibling),
+				bullet: sibling.textContent.trim(),
+				element: sibling
+			});
 		}
-		console.log(siblings);
-		siblings.forEach((sibling) => {console.log(sibling.className);})
+		console.log("siblings", siblings);
 		return siblings;
-
 	}
 
 	onunload() {

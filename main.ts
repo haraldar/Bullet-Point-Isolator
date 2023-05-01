@@ -1,3 +1,4 @@
+import { test } from 'node:test';
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
 const fs = require('fs');
 const path = require('path');
@@ -73,65 +74,179 @@ export default class BulletPointIsolator extends Plugin {
 
 		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
 		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-
-			if (evt.altKey && evt.ctrlKey && this.getBulletPointNr(evt.target.parentNode)){
-
-				// Get all the bullet and subbullet points.
-				console.log("Bullet Point Isolator activated with Ctrl+Alt+Click.");
-				const bulletPoints = this.findAllBulletPoints(evt.target.parentNode);
-
-				// Create the text from the bullet.
-				const mainOffset = bulletPoints[0].offset;
-				const bulletPointContents = bulletPoints.map(bp => "\t".repeat(bp.offset - mainOffset) + bp.bullet);
-				const bulletPointsText = bulletPointContents.join("\n");
-
-				// Create the temporary file if it doesnt exist.
-				const isolatedFileName = "isolated.md";
-				const isolatedFileAbstract = this.app.vault.getAbstractFileByPath(isolatedFileName);
-				if (isolatedFileAbstract)
-					this.app.vault.delete(isolatedFileAbstract);
-
-				// Write the bullets to the temporary file.
-				this.app.vault.create(isolatedFileName, bulletPointsText);
-
-
-				// Open the file in Obsidian editor using the obsidian://open protocol.
-				const vaultName = this.app.vault.getName();
-				const fileURI = encodeURI(`obsidian://open?vault=${vaultName}&file=${isolatedFileName}`);
-				window.open(fileURI);
-			}
+		this.registerDomEvent(document, 'click', async (evt: MouseEvent) => {
+			await this.isolateBulletPoint(evt);
 		});
 
 		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
 		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
 	}
 
-	getBulletPointNr(elem) {
-		const match = elem.className.match(/HyperMD-list-line-(\d+)/);
-		return match ? match[1] : null;
+	async isolateBulletPoint(evt: MouseEvent) {
+		
+		if (evt.altKey && evt.ctrlKey && this.getBulletPointNr(evt.target.parentNode)) {
+			
+			console.log("Bullet Point Isolator activated with Ctrl+Alt+Click.");
+
+			// Get all the bullet and subbullet points.
+			const bulletPointsCount = this.countBulletPointLines(evt.target.parentNode);
+
+			// Get current active line.
+			const currentLine = this.app.workspace.activeEditor?.editor?.getCursor().line;
+			let rootLine = this.app.workspace.activeEditor?.editor?.getLine(currentLine);
+
+			// Get the root offset and normalize the first line.
+			const rootOffset = rootLine?.match(/^\s*/)[0].length;
+			if (rootOffset >= 1)
+				rootLine = rootLine.substring(rootOffset);
+
+			// Iterate through the lines affected by the click.
+			let linesToIsolate = [rootLine];
+			for (let i = 1; i < bulletPointsCount; i++) {
+
+				// Get the line.
+				let lineToIsolate = this.app.workspace.activeEditor?.editor?.getLine(currentLine + i);
+				
+				// Normalize the leading spaces.
+				if (rootOffset >= 1) {
+					lineToIsolate = lineToIsolate?.substring(rootOffset);
+				}
+
+				// Push the line to the array.
+				linesToIsolate.push(lineToIsolate);
+			}
+
+			// Join the lines to use them inside the create function later.
+			const bulletPointsText = linesToIsolate.join("\n");
+			
+			// Create the temporary file if it doesnt exist otherwise delete it first.
+			const isolatedFileName = "isolated.md";
+			const isolatedFileAbstract = this.app.vault.getAbstractFileByPath(isolatedFileName);
+			if (isolatedFileAbstract)
+				this.app.vault.delete(isolatedFileAbstract);
+			
+			// Write the bullets to the temporary file.
+			const isolatedFile = await this.app.vault.create(isolatedFileName, bulletPointsText);
+			
+			// Create new leaf and open a file there.
+			await this.app.workspace.getLeaf().openFile(isolatedFile);
+			
+		}
 	}
 
-	// Returns a list of div elements that are
-	findAllBulletPoints(elem) {
-		let sibling = elem;
-		const origListNr = this.getBulletPointNr(sibling);
-		let siblings = [{
-			offset: origListNr,
-			bullet: sibling.textContent.trim(),
-			element: sibling
-		}];
-		while (sibling.nextSibling !== null && origListNr < this.getBulletPointNr(sibling.nextSibling)) {
-			sibling = sibling.nextSibling;
-			siblings.push({
-				offset: this.getBulletPointNr(sibling),
-				bullet: sibling.textContent.trim(),
-				element: sibling
-			});
-		}
-		console.log("siblings", siblings);
-		return siblings;
+	getBulletPointNr(elem) {
+		const match = elem.className.match(/HyperMD-list-line-(\d+)/);
+		return match ? parseInt(match[1]) : null;
 	}
+
+	countBulletPointLines(elem) {
+
+		// Set the passed element as initial sibling and het its offset number.
+		let sibling = elem;
+		const rootOffset = this.getBulletPointNr(sibling);
+
+		let siblingCount = 1;
+		while (sibling.nextSibling !== null) {
+
+
+			// Set the sibling as its next sibling.
+			sibling = sibling.nextSibling;
+			
+			// If the offset number is equal or less, break the loop.
+			const siblingOffset = this.getBulletPointNr(sibling);
+			if (rootOffset >= siblingOffset)
+				break;
+
+			// Increment the siblings count.
+			siblingCount++;
+		}
+
+		return siblingCount;
+	}
+	
+	// openFileWithObsidianProtocol(vaultName, filePath) {
+	// 	const fileURI = encodeURI(`obsidian://open?vault=${vaultName}&file=${filePath}`);
+	// 	window.open(fileURI);
+	// }
+
+	// offsetClassNameNr(className, offset = -1) {
+	// 	return className
+	// 		.replace(
+	// 			/HyperMD-list-line-(\d+)/,
+	// 			(match, lineNumber) => {
+	// 				const newLineNumber = parseInt(lineNumber) + offset;
+	// 				// return `HyperMD-list-line-1`;
+	// 				return `HyperMD-list-line-${newLineNumber}`;
+	// 			}
+	// 		);
+	// }
+
+	// offsetBulletPoint(elem: HTMLElement, offset: number = -1) {
+	// 	const indentNr = this.getBulletPointNr(elem);
+	// 	// const bufferElement = elem.querySelector('.cm-widgetBuffer');
+	// 	// if (bufferElement) {
+	// 	//   const remainingElements = Array.from(bufferElement.nextElementSibling.children);
+	// 	//   elem.replaceChildren(...remainingElements);
+	// 	// }
+	// 	console.log(elem);
+	// 	console.log(elem.textContent?.trim());
+	// 	// return className
+	// 	// 	.replace(
+	// 	// 		/HyperMD-list-line-(\d+)/,
+	// 	// 		(match, lineNumber) => {
+	// 	// 			const newLineNumber = parseInt(lineNumber) + offset;
+	// 	// 			return `HyperMD-list-line-1`;
+	// 	// 			// return `HyperMD-list-line-${newLineNumber}`;
+	// 	// 		}
+	// 	// 	);
+	// }
+
+
+	// // Returns a list of div elements that are
+	// findAllBulletPoints(elem) {
+
+	// 	// Set the passed element as initial sibling and het its offset number.
+	// 	let sibling = elem;
+	// 	const rootOffset = this.getBulletPointNr(sibling);
+
+	// 	// Iterate through all the next siblings as long as a next one exists.
+	// 	let siblings = [{
+	// 		offset: rootOffset,
+	// 		bullet: sibling.textContent.trim(),
+	// 		element: sibling
+	// 	}];
+	// 	while (sibling.nextSibling !== null) {
+
+
+	// 		// Set the sibling as its next sibling.
+	// 		sibling = sibling.nextSibling;
+			
+	// 		// If the offset number is equal or less, break the loop.
+	// 		const siblingOffset = this.getBulletPointNr(sibling);
+	// 		if (rootOffset >= siblingOffset)
+	// 			break;
+
+	// 		// Replace the offset number in the class name of the element if the rootOffset is not already 1.
+	// 		if (rootOffset > 1) {
+	// 			const newClasses = this.offsetClassNameNr(sibling.className);
+	// 			sibling.classList.remove(...sibling.classList);
+	// 			newClasses.split(" ").forEach(c => sibling.classList.add(c));
+	// 		}
+
+	// 		siblings.push({
+	// 			offset: siblingOffset,
+	// 			bullet: sibling.textContent.trim(),
+	// 			element: sibling
+	// 		});
+	// 	}
+
+	// 	return {
+	// 		offset: rootOffset,
+	// 		originalFile: this.app.workspace.getActiveFile()?.path,
+	// 		lineNr: this.app.workspace.activeEditor?.editor,
+	// 		elements: siblings
+	// 	}
+	// }
 
 	onunload() {
 

@@ -88,12 +88,15 @@ export default class BulletPointIsolator extends Plugin {
 			
 			console.log("Bullet Point Isolator activated with Ctrl+Alt+Click.");
 
+			// Get some metadata.
+			const fileOrigin = this.app.workspace.activeEditor?.file;
+
 			// Get all the bullet and subbullet points.
 			const bulletPointsCount = this.countBulletPointLines(evt.target.parentNode);
 
 			// Get current active line.
-			const currentLine = this.app.workspace.activeEditor?.editor?.getCursor().line;
-			let rootLine = this.app.workspace.activeEditor?.editor?.getLine(currentLine);
+			const currentFocusLine = this.app.workspace.activeEditor?.editor?.getCursor().line;
+			let rootLine = this.app.workspace.activeEditor?.editor?.getLine(currentFocusLine);
 
 			// Get the root offset and normalize the first line.
 			const rootOffset = rootLine?.match(/^\s*/)[0].length;
@@ -105,7 +108,7 @@ export default class BulletPointIsolator extends Plugin {
 			for (let i = 1; i < bulletPointsCount; i++) {
 
 				// Get the line.
-				let lineToIsolate = this.app.workspace.activeEditor?.editor?.getLine(currentLine + i);
+				let lineToIsolate = this.app.workspace.activeEditor?.editor?.getLine(currentFocusLine + i);
 				
 				// Normalize the leading spaces.
 				if (rootOffset >= 1) {
@@ -115,9 +118,18 @@ export default class BulletPointIsolator extends Plugin {
 				// Push the line to the array.
 				linesToIsolate.push(lineToIsolate);
 			}
+			
 
 			// Join the lines to use them inside the create function later.
-			const bulletPointsText = linesToIsolate.join("\n");
+			let bulletPointsText = linesToIsolate.join("\n");
+
+			// Add some frontmatter.
+			const frontmatterJson = {
+				"origin": this.app.workspace.activeEditor?.file?.path,
+				"line": currentFocusLine
+			}
+			const frontmatter = this.convertJsonToFrontmatter(frontmatterJson);
+			bulletPointsText = frontmatter + bulletPointsText;
 			
 			// Create the temporary file if it doesnt exist otherwise delete it first.
 			const isolatedFileName = "isolated.md";
@@ -127,6 +139,12 @@ export default class BulletPointIsolator extends Plugin {
 			
 			// Write the bullets to the temporary file.
 			const isolatedFile = await this.app.vault.create(isolatedFileName, bulletPointsText);
+
+			// const metadata = { origin: fileOrigin }
+			// const { content, data } = fm(isolatedFile)
+			this.app.fileManager.processFrontMatter(isolatedFile, (res) => console.log(res));
+			// let fileCache = this.app.metadataCache.getFileCache(isolatedFile);
+			// console.log(fileCache);
 			
 			// Create new leaf and open a file there.
 			await this.app.workspace.getLeaf().openFile(isolatedFile);
@@ -162,6 +180,16 @@ export default class BulletPointIsolator extends Plugin {
 		}
 
 		return siblingCount;
+	}
+
+	convertJsonToFrontmatter(obj, pendingNewline: boolean = true) {
+		let frontmatterArr = Object.keys(obj).map((key) => `${key}: ${obj[key]}`);
+		frontmatterArr.push("---");
+		frontmatterArr.unshift("---");
+		let frontmatterText = frontmatterArr.join("\n")
+		return pendingNewline
+			? frontmatterText + "\n"
+			: frontmatterText;
 	}
 	
 	// openFileWithObsidianProtocol(vaultName, filePath) {

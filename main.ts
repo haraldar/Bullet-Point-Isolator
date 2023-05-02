@@ -1,7 +1,4 @@
-import { test } from 'node:test';
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
-const fs = require('fs');
-const path = require('path');
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, EditorPosition } from 'obsidian';
 
 
 // Remember to rename these classes and interfaces!
@@ -13,6 +10,10 @@ interface BulletPointIsolatorSettings {
 const DEFAULT_SETTINGS: BulletPointIsolatorSettings = {
 	mySetting: 'default'
 }
+
+
+
+const ISOLATION_FILE = "isolation.md";
 
 export default class BulletPointIsolator extends Plugin {
 	settings: BulletPointIsolatorSettings;
@@ -87,69 +88,145 @@ export default class BulletPointIsolator extends Plugin {
 		if (evt.altKey && evt.ctrlKey && this.getBulletPointNr(evt.target.parentNode)) {
 			
 			console.log("Bullet Point Isolator activated with Ctrl+Alt+Click.");
+			this.showNotice("Bullet Point Isolator activated with Ctrl+Alt+Click.");
 
-			// Get some metadata.
+			// Get some infos about the file in focus.
 			const fileOrigin = this.app.workspace.activeEditor?.file;
-
-			// Get all the bullet and subbullet points.
-			const bulletPointsCount = this.countBulletPointLines(evt.target.parentNode);
-
-			// Get current active line.
 			const currentFocusLine = this.app.workspace.activeEditor?.editor?.getCursor().line;
-			let rootLine = this.app.workspace.activeEditor?.editor?.getLine(currentFocusLine);
 
-			// Get the root offset and normalize the first line.
-			const rootOffset = rootLine?.match(/^\s*/)[0].length;
-			if (rootOffset >= 1)
-				rootLine = rootLine.substring(rootOffset);
+			// Check if we are in the isolation file.
+			if (fileOrigin?.path === null || fileOrigin?.path === undefined) {
+				this.showNotice("file origin is either null or undefined", true);
+				return;
+			}
+			else if (fileOrigin?.path === ISOLATION_FILE) {
 
-			// Iterate through the lines affected by the click.
-			let linesToIsolate = [rootLine];
-			for (let i = 1; i < bulletPointsCount; i++) {
-
-				// Get the line.
-				let lineToIsolate = this.app.workspace.activeEditor?.editor?.getLine(currentFocusLine + i);
-				
-				// Normalize the leading spaces.
-				if (rootOffset >= 1) {
-					lineToIsolate = lineToIsolate?.substring(rootOffset);
+				// The selected file must contain a bullet point.
+				const bulletPointNr = this.getBulletPointNr(evt.target.parentNode);
+				if (bulletPointNr === null) {
+					this.showNotice("line in focus doesn't have bullet point", true);
+					return;
+				}
+				else if ( bulletPointNr !== 1) {
+					this.showNotice("line in focus isn't root bullet point", true);
+					return;
 				}
 
-				// Push the line to the array.
-				linesToIsolate.push(lineToIsolate);
+				// Process the frontmatter, then modify the files using those as input.
+				await this.app.fileManager.processFrontMatter(fileOrigin, async (fm) => {
+
+					// Get the amount of lines we need to write.
+					const fmLength = Object.keys(fm).length + 2;
+					const isolationFileLineCount = this.app.workspace.activeEditor?.editor?.lineCount();
+
+					// Read the lines to transfer.
+					let linesToWrite = [];
+					for (let lineNr = fmLength; lineNr < isolationFileLineCount; lineNr++) {
+						linesToWrite.push(this.app.workspace.activeEditor?.editor?.getLine(lineNr));
+					}
+					const linesToWriteCount = linesToWrite.length;
+
+					// Open the origin file and get the editor.
+					const originFileAbstract = this.app.vault.getAbstractFileByPath(fm.origin);
+					await this.app.workspace.getLeaf().openFile(originFileAbstract);
+					const currentEditor = this.app.workspace.activeEditor?.editor;
+
+					// Free up the space in the origin file.
+					for (let lineNr = fm.startLine; lineNr < fm.endLine; lineNr++) {
+						currentEditor?.setLine(lineNr, "");
+					}
+					// TODO Check what if less lines.
+					if (linesToWriteCount > ((fm.endLine - fm.startLine) + 1)) {
+						// Set the last line to
+						const spacers = "\n".repeat(linesToWriteCount - ((fm.endLine - fm.startLine) + 1));
+						currentEditor?.setLine(fm.endLine, spacers);
+					}
+					else {
+						// Set the last line of the range to write to a simple space.
+						currentEditor?.setLine(fm.endLine, "");
+					}
+
+					// Transfer the lines from isolation to the new place.
+					for (let i = 0; i < linesToWriteCount; i++) {
+						const lineToWrite = fm.startLine + i;
+						currentEditor?.setLine(lineToWrite, "\t".repeat(fm.offset) + linesToWrite[i]);
+					}
+				});
+
 			}
-			
+			else {
+				
+				// A selected line is required.
+				if (currentFocusLine === undefined || currentFocusLine === null) {
+					this.showNotice("no line in focus", true);
+					return;
+				}
 
-			// Join the lines to use them inside the create function later.
-			let bulletPointsText = linesToIsolate.join("\n");
+				// The selected file must contain a bullet point.
+				const isBulletPoint = this.getBulletPointNr(evt.target.parentNode);
+				if (isBulletPoint === null) {
+					this.showNotice("line in focus doesn't have bullet point", true);
+					return;
+				}
+				// Get all the bullet and subbullet points.
+				const bulletPointsCount = this.countBulletPointLines(evt.target.parentNode);
+	
+				// Get current active line.
+				let rootLine = this.app.workspace.activeEditor?.editor?.getLine(currentFocusLine);
+	
+				// Get the root offset and normalize the first line.
+				const rootOffset = rootLine?.match(/^\s*/)[0].length;
+				if (rootOffset >= 1)
+					rootLine = rootLine.substring(rootOffset);
+	
+				// Iterate through the lines affected by the click.
+				let linesToIsolate = [rootLine];
+				for (let i = 1; i < bulletPointsCount; i++) {
+	
+					// Get the line.
+					let lineToIsolate = this.app.workspace.activeEditor?.editor?.getLine(currentFocusLine + i);
+					
+					// Normalize the leading spaces and if it is a space then replace it with tabs.
+					if (rootOffset >= 1) {
+						lineToIsolate = lineToIsolate?.substring(rootOffset);
+					}
+	
+					// Push the line to the array.
+					linesToIsolate.push(lineToIsolate);
+				}
+				console.log(linesToIsolate);
+	
+				// Join the lines to use them inside the create function later.
+				let bulletPointsText = linesToIsolate.join("\n");
+	
+				// Add some frontmatter to the bulletpoint to copy.
+				const frontmatterJson = {
+					"origin": this.app.workspace.activeEditor?.file?.path,
+					"startLine": currentFocusLine,
+					"endLine": currentFocusLine + bulletPointsCount - 1,
+					"offset": rootOffset
+				}
+				const frontmatter = this.convertJsonToFrontmatter(frontmatterJson);
+				bulletPointsText = frontmatter + bulletPointsText;
+				
+				// Create the temporary file if it doesnt exist otherwise delete it first.
+				const isolatedFileAbstract = this.app.vault.getAbstractFileByPath(ISOLATION_FILE);
+				if (isolatedFileAbstract)
+					this.app.vault.delete(isolatedFileAbstract);
+				
+				// Write the bullets to the temporary file.
+				const isolatedFile = await this.app.vault.create(ISOLATION_FILE, bulletPointsText);
+				
+				// Create new leaf and open a file there.
+				await this.app.workspace.getLeaf().openFile(isolatedFile);
 
-			// Add some frontmatter.
-			const frontmatterJson = {
-				"origin": this.app.workspace.activeEditor?.file?.path,
-				"line": currentFocusLine
 			}
-			const frontmatter = this.convertJsonToFrontmatter(frontmatterJson);
-			bulletPointsText = frontmatter + bulletPointsText;
-			
-			// Create the temporary file if it doesnt exist otherwise delete it first.
-			const isolatedFileName = "isolated.md";
-			const isolatedFileAbstract = this.app.vault.getAbstractFileByPath(isolatedFileName);
-			if (isolatedFileAbstract)
-				this.app.vault.delete(isolatedFileAbstract);
-			
-			// Write the bullets to the temporary file.
-			const isolatedFile = await this.app.vault.create(isolatedFileName, bulletPointsText);
 
-			// const metadata = { origin: fileOrigin }
-			// const { content, data } = fm(isolatedFile)
-			this.app.fileManager.processFrontMatter(isolatedFile, (res) => console.log(res));
-			// let fileCache = this.app.metadataCache.getFileCache(isolatedFile);
-			// console.log(fileCache);
-			
-			// Create new leaf and open a file there.
-			await this.app.workspace.getLeaf().openFile(isolatedFile);
-			
 		}
+	}
+
+	showNotice(msg, isFail: boolean = false) {
+		new Notice(isFail ? `BulletPointIsolation failed: ${msg}.` : msg);
 	}
 
 	getBulletPointNr(elem) {
@@ -191,90 +268,6 @@ export default class BulletPointIsolator extends Plugin {
 			? frontmatterText + "\n"
 			: frontmatterText;
 	}
-	
-	// openFileWithObsidianProtocol(vaultName, filePath) {
-	// 	const fileURI = encodeURI(`obsidian://open?vault=${vaultName}&file=${filePath}`);
-	// 	window.open(fileURI);
-	// }
-
-	// offsetClassNameNr(className, offset = -1) {
-	// 	return className
-	// 		.replace(
-	// 			/HyperMD-list-line-(\d+)/,
-	// 			(match, lineNumber) => {
-	// 				const newLineNumber = parseInt(lineNumber) + offset;
-	// 				// return `HyperMD-list-line-1`;
-	// 				return `HyperMD-list-line-${newLineNumber}`;
-	// 			}
-	// 		);
-	// }
-
-	// offsetBulletPoint(elem: HTMLElement, offset: number = -1) {
-	// 	const indentNr = this.getBulletPointNr(elem);
-	// 	// const bufferElement = elem.querySelector('.cm-widgetBuffer');
-	// 	// if (bufferElement) {
-	// 	//   const remainingElements = Array.from(bufferElement.nextElementSibling.children);
-	// 	//   elem.replaceChildren(...remainingElements);
-	// 	// }
-	// 	console.log(elem);
-	// 	console.log(elem.textContent?.trim());
-	// 	// return className
-	// 	// 	.replace(
-	// 	// 		/HyperMD-list-line-(\d+)/,
-	// 	// 		(match, lineNumber) => {
-	// 	// 			const newLineNumber = parseInt(lineNumber) + offset;
-	// 	// 			return `HyperMD-list-line-1`;
-	// 	// 			// return `HyperMD-list-line-${newLineNumber}`;
-	// 	// 		}
-	// 	// 	);
-	// }
-
-
-	// // Returns a list of div elements that are
-	// findAllBulletPoints(elem) {
-
-	// 	// Set the passed element as initial sibling and het its offset number.
-	// 	let sibling = elem;
-	// 	const rootOffset = this.getBulletPointNr(sibling);
-
-	// 	// Iterate through all the next siblings as long as a next one exists.
-	// 	let siblings = [{
-	// 		offset: rootOffset,
-	// 		bullet: sibling.textContent.trim(),
-	// 		element: sibling
-	// 	}];
-	// 	while (sibling.nextSibling !== null) {
-
-
-	// 		// Set the sibling as its next sibling.
-	// 		sibling = sibling.nextSibling;
-			
-	// 		// If the offset number is equal or less, break the loop.
-	// 		const siblingOffset = this.getBulletPointNr(sibling);
-	// 		if (rootOffset >= siblingOffset)
-	// 			break;
-
-	// 		// Replace the offset number in the class name of the element if the rootOffset is not already 1.
-	// 		if (rootOffset > 1) {
-	// 			const newClasses = this.offsetClassNameNr(sibling.className);
-	// 			sibling.classList.remove(...sibling.classList);
-	// 			newClasses.split(" ").forEach(c => sibling.classList.add(c));
-	// 		}
-
-	// 		siblings.push({
-	// 			offset: siblingOffset,
-	// 			bullet: sibling.textContent.trim(),
-	// 			element: sibling
-	// 		});
-	// 	}
-
-	// 	return {
-	// 		offset: rootOffset,
-	// 		originalFile: this.app.workspace.getActiveFile()?.path,
-	// 		lineNr: this.app.workspace.activeEditor?.editor,
-	// 		elements: siblings
-	// 	}
-	// }
 
 	onunload() {
 

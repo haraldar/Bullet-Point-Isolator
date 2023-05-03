@@ -87,8 +87,8 @@ export default class BulletPointIsolator extends Plugin {
 		
 		if (evt.altKey && evt.ctrlKey && this.getBulletPointNr(evt.target.parentNode)) {
 			
-			console.log("Bullet Point Isolator activated with Ctrl+Alt+Click.");
-			this.showNotice("Bullet Point Isolator activated with Ctrl+Alt+Click.");
+			// console.log("Bullet Point Isolator activated with Ctrl+Alt+Click.");
+			this.showNotice("Bullet Point Isolator activated.");
 
 			// Get some infos about the file in focus.
 			const fileOrigin = this.app.workspace.activeEditor?.file;
@@ -118,6 +118,7 @@ export default class BulletPointIsolator extends Plugin {
 					// Get the amount of lines we need to write.
 					const fmLength = Object.keys(fm).length + 2;
 					const isolationFileLineCount = this.app.workspace.activeEditor?.editor?.lineCount();
+					const isolatedFileAbstract = this.app.workspace.activeEditor?.file;
 
 					// Read the lines to transfer.
 					let linesToWrite = [];
@@ -151,6 +152,9 @@ export default class BulletPointIsolator extends Plugin {
 						const lineToWrite = fm.startLine + i;
 						currentEditor?.setLine(lineToWrite, "\t".repeat(fm.offset) + linesToWrite[i]);
 					}
+
+					// Delete the isolation file.
+					await this.app.vault.delete(isolatedFileAbstract);
 				});
 
 			}

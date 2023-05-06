@@ -93,20 +93,13 @@ export default class BulletPointIsolator extends Plugin {
 					if (isolationFile) {
 
 						// First open the isolation file in the editor and write back.
-						// needsWriteBackUnloadEvent = false;
 						await this.app.workspace.getLeaf().openFile(isolationFile);
-						// needsWriteBackUnloadEvent = true;
 						// await this.openFileWithoutEvent(isolationFile);
-						// await this.writeBackModifiedBulletPoint(null);
-						this
-							.writeBackModifiedBulletPoint(null)
-							.then(async () => await this.app.workspace.getLeaf().openFile(openedFile));
+						await this.writeBackModifiedBulletPoint(null);
 
-						// // Open the file started from back open.
-						// console.log("File before", openedFile);
-						// // await this.openFileWithoutEvent(openedFile);
-						// await this.app.workspace.getLeaf().openFile(openedFile);
-						// console.log("File after", openedFile);
+						// Open the file started from back open.
+						// await this.openFileWithoutEvent(openedFile);
+						await this.app.workspace.getLeaf().openFile(openedFile);
 						console.log("After", openedFile?.path);
 
 					}
@@ -114,7 +107,7 @@ export default class BulletPointIsolator extends Plugin {
 				}
 			}
 
-			// Skiii
+			// Set the new last opened file path to the currently opened file.
 			lastOpenFilePath = openedFile?.path;
 		});
 
@@ -220,8 +213,6 @@ export default class BulletPointIsolator extends Plugin {
 		// Create new leaf and open a file there.
 		await this.app.workspace.getLeaf().openFile(isolatedFile);
 
-		// this.setIsolationFileUnloadEvent();
-
 	}
 
 	async writeBackModifiedBulletPoint(evt: MouseEvent | null | undefined) {
@@ -244,8 +235,8 @@ export default class BulletPointIsolator extends Plugin {
 		// Process the frontmatter, then modify the files using those as input.
 		let fm;
 		await this.app.fileManager.processFrontMatter(fileOrigin, (frontmatter) => fm = frontmatter);
-		// await this.app.fileManager.processFrontMatter(fileOrigin, async (fm) => {
 		if (fm) {
+
 			// Get the amount of lines we need to write.
 			const fmLength = Object.keys(fm).length + 2;
 			const isolationFileLineCount = this.app.workspace.activeEditor?.editor?.lineCount();
@@ -262,7 +253,6 @@ export default class BulletPointIsolator extends Plugin {
 			needsWriteBackUnloadEvent = false;
 			const originFileAbstract = this.app.vault.getAbstractFileByPath(fm.origin);
 			// await this.openFileWithoutEvent(originFileAbstract);
-			console.log("Opening file in heree");
 			await this.app.workspace.getLeaf().openFile(originFileAbstract);
 			const currentEditor = this.app.workspace.activeEditor?.editor;
 
@@ -291,7 +281,10 @@ export default class BulletPointIsolator extends Plugin {
 			await this.app.vault.delete(isolatedFileAbstract);
 
 			needsWriteBackUnloadEvent = true;
-		// });
+
+		}
+		else {
+			this.showNotice("couldn't process frontmatter")
 		}
 	}
 

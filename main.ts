@@ -1,4 +1,4 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, EditorPosition, TextFileView, DataWriteOptions, TFile, TAbstractFile } from 'obsidian';
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, EditorPosition, TextFileView, DataWriteOptions, TFile, TAbstractFile, MarkdownFileInfo } from 'obsidian';
 
 
 // Remember to rename these classes and interfaces!
@@ -33,42 +33,55 @@ export default class BulletPointIsolator extends Plugin {
 		const statusBarItemEl = this.addStatusBarItem();
 		statusBarItemEl.setText('Status Bar Text');
 
-		// This adds a simple command that can be triggered anywhere
+		// // Triggers isolation.
+		// this.addCommand({
+		// 	id: "bullet-point-isolator-isolate",
+		// 	name: "Isolate",
+		// 	callback: () => {
+		// 		// new BulletPointIsolatorModal(this.app).open();
+		// 		console.log("Triggered isolation.");
+		// 	}
+		// });
+		// Triggers writing back.
 		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new BulletPointIsolatorModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'BulletPointIsolator editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('BulletPointIsolator Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new BulletPointIsolatorModal(this.app).open();
-					}
+			id: "bullet-point-isolator-write-back",
+			name: "Write Back",
+			editorCallback: async (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
+				
+				// Check if this part of the event is currently blocked.
+				if (needsWriteBackUnloadEvent) {
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
+					// Checks that we just switched from the isolation file to another file.
+					if (ctx.file?.path === this.settings.isolationFilePath) {
+
+						new Notice("Bullet Point Isolator: Isolation activated per command.");
+
+						// Write back.
+						await this.writeBackModifiedBulletPoint(null, true);
+
+					}
 				}
 			}
 		});
+		// // This adds a complex command that can check whether the current state of the app allows execution of the command
+		// this.addCommand({
+		// 	id: 'open-sample-modal-complex',
+		// 	name: 'Open sample modal (complex)',
+		// 	checkCallback: (checking: boolean) => {
+		// 		// Conditions to check
+		// 		const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
+		// 		if (markdownView) {
+		// 			// If checking is true, we're simply "checking" if the command can be run.
+		// 			// If checking is false, then we want to actually perform the operation.
+		// 			if (!checking) {
+		// 				new BulletPointIsolatorModal(this.app).open();
+		// 			}
+
+		// 			// This command will only show up in Command Palette when the check function returns true
+		// 			return true;
+		// 		}
+		// 	}
+		// });
 
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new BulletPointIsolatorSettingTab(this.app, this));

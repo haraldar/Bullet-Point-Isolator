@@ -1,33 +1,37 @@
 # Obsidian Bullet Point Isolator
 
-Using this plugin makes it possible to isolate a bullet point and its subbullets into a separate file, where they can be modified to your heart's content, then write the changes back to the original file upon leaving or closing or "ctrl+alt+click"-ing the root bullet point in the isolation file.
+Increase your file content overview while editing drastically: Isolate MarkDown elements and its subcontent like headers, bullet points, tasks, etc. from the main file into an isolation file, edit them there and then automatically or manually write the changes back to the original file!
 
 
 ## Why?
 
-A coworker demonstrated Logseq to me, which is different of a system compared to Obsidian, but it does have a neat feature that I found using myself a lot so I decided to make it into a working 
+A coworker demonstrated Logseq to me, which is different of a system in terms of note taking compared to Obsidian.
+Although I don't feel any need to use Logseq, because it seems rather overwhelming, I did see a neat little feature that I thought was quite practical: isolation of bullet points.
+I built a small version for myself and I found myself using it A LOT immediately, because it drastically increased my overview inside the files, since now all my bullet points don't have to be worked on in the same file, but can be edited in and written back from another file without much effort.
+To me it became an indespensable tool, so I decided to make it into a full plugin and expand it further, since there is more goal to mine.
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Changes the default font color to red using `styles.css`.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open Sample Modal" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
 
-## First time developing plugins?
+## How does it work?
 
-Quick starting guide for new plugin devs:
+1. Isolation
+  - Manually: Select any markdown element with ```Ctrl+Alt+Click```.
+  - Command: Click on a markdown element, ```Ctrl+P``` to open the command wheel and run the command ```Bullet Point Isolator: Isolate```.
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+2. Write Back
+  - Manually: Select the root element with ```Ctrl+Alt+Click```.
+  - Command: Click on a markdown element, ```Ctrl+P``` to open the command wheel and run the command ```Bullet Point Isolator: Write Back```.
+  - Automatically: Just navigate away, close the file, whatever you wish to do. (Maybe not whatever, but you know what I mean.)
+
+
+## Next Features
+
+- more settings like change the hotkeys
+- nested isolation from the isolation file
+- support for more MD elements
+- visual navigation using the keyboard up and down to "zoom the focus" on the lines around the current isolated element
+
+
+---
 
 ## Releasing new releases
 
@@ -46,12 +50,6 @@ Quick starting guide for new plugin devs:
 - Publish an initial version.
 - Make sure you have a `README.md` file in the root of your repo.
 - Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
-
-## How to use
-
-- Clone this repo.
-- `npm i` or `yarn` to install dependencies
-- `npm run dev` to start compilation in watch mode.
 
 ## Manually installing the plugin
 

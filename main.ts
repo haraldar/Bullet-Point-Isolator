@@ -1,4 +1,4 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, EditorPosition, TextFileView, TFile, TAbstractFile } from 'obsidian';
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, EditorPosition, TextFileView, DataWriteOptions, TFile, TAbstractFile } from 'obsidian';
 
 
 // Remember to rename these classes and interfaces!
@@ -79,7 +79,6 @@ export default class BulletPointIsolator extends Plugin {
 			// Set the last opened file to the current file.
 			if (!lastOpenFilePath)
 				lastOpenFilePath = openedFile?.path;
-			console.log("Before", openedFile?.path);
 			
 			// Check if this part of the event is currently blocked.
 			if (needsWriteBackUnloadEvent) {
@@ -91,15 +90,10 @@ export default class BulletPointIsolator extends Plugin {
 					const isolationFile = this.app.vault.getFiles().find(file => file.path === this.settings.isolationFilePath);
 					if (isolationFile) {
 
-						// First open the isolation file in the editor and write back.
-						await this.app.workspace.getLeaf().openFile(isolationFile);
-						// await this.openFileWithoutEvent(isolationFile);
-						await this.writeBackModifiedBulletPoint(null);
+						new Notice("Bullet Point Isolator: Isolation activated automatically.");
 
-						// Open the file started from back open.
-						// await this.openFileWithoutEvent(openedFile);
-						await this.app.workspace.getLeaf().openFile(openedFile);
-						console.log("After", openedFile?.path);
+						// Write back.
+						await this.writeBackModifiedBulletPoint(null, false);
 
 					}
 
@@ -108,6 +102,7 @@ export default class BulletPointIsolator extends Plugin {
 
 			// Set the new last opened file path to the currently opened file.
 			lastOpenFilePath = openedFile?.path;
+			needsWriteBackUnloadEvent = true;
 		});
 
 		// Register a DOM onclick event for if isolate or write back a bullet point.
@@ -115,27 +110,34 @@ export default class BulletPointIsolator extends Plugin {
 			if (evt.altKey && evt.ctrlKey && this.getBulletPointNr(evt.target.parentNode)) {
 
 				// Get some infos about the file in focus.
-				const fileOriginPath = this.app.workspace.activeEditor?.file.path;
+				const fileOriginPath = this.app.workspace.activeEditor?.file?.path;
 
 				// Check if the file is defined or not.
-				if (fileOriginPath === null || fileOriginPath === undefined) {
-					this.showNotice("file origin is either null or undefined", true);
+				if (!fileOriginPath) {
+
+					this.showFailNotice("File origin is either null or undefined.");
+				
 				}
 				else {
 
-					this.showNotice("Bullet Point Isolator activated.");
-
 					// Check if the file origin is any file or the isolation file.
-					fileOriginPath === this.settings.isolationFilePath
-						? await this.writeBackModifiedBulletPoint(evt)
-						: await this.isolateBulletPoint(evt);
+					if (fileOriginPath === this.settings.isolationFilePath) {
+						new Notice("Bullet Point Isolator: Write back activated manually.");
+						console.log("Bullet Point Isolator: Write back activated manually.");
+						await this.writeBackModifiedBulletPoint(evt, true);
+					}
+					else {
+						new Notice("Bullet Point Isolator: Isolation activated manually.");
+						console.log("Bullet Point Isolator: Isolation activated manually.");
+						await this.isolateBulletPoint(evt);
+					}
 				}
 
 			}
 		});
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		// // When registering intervals, this function will automatically clear the interval when the plugin is disabled.
+		// this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
 	}
 	
 
@@ -151,14 +153,14 @@ export default class BulletPointIsolator extends Plugin {
 
 		// A selected line is required.
 		if (currentFocusLine === undefined || currentFocusLine === null) {
-			this.showNotice("no line in focus", true);
+			this.showFailNotice("No line in focus.");
 			return;
 		}
 
 		// The selected file must contain a bullet point.
 		const isBulletPoint = this.getBulletPointNr(evt.target.parentNode);
 		if (isBulletPoint === null) {
-			this.showNotice("line in focus doesn't have bullet point", true);
+			this.showFailNotice("Line in focus doesn't have bullet point.");
 			return;
 		}
 		// Get all the bullet and subbullet points.
@@ -214,81 +216,85 @@ export default class BulletPointIsolator extends Plugin {
 
 	}
 
-	async writeBackModifiedBulletPoint(evt: MouseEvent | null | undefined) {
+	async writeBackModifiedBulletPoint(evt: MouseEvent | null, openOriginFileAfter: boolean) {
 
-		const fileOrigin = this.app.workspace.activeEditor?.file;
-
-		// The selected file must contain a bullet point.
+		// Check the event target if an event is supplied.
 		if (evt) {
+			
+			// The selected file must contain a bullet point.
 			const bulletPointNr = this.getBulletPointNr(evt.target.parentNode);
 			if (bulletPointNr === null) {
-				this.showNotice("line in focus doesn't have bullet point", true);
+				this.showFailNotice("Line in focus doesn't have bullet point.");
 				return;
 			}
 			else if ( bulletPointNr !== 1) {
-				this.showNotice("line in focus isn't root bullet point", true);
+				this.showFailNotice("Line in focus isn't root bullet point.");
 				return;
 			}
+			
 		}
 
-		// Process the frontmatter, then modify the files using those as input.
-		let fm;
-		await this.app.fileManager.processFrontMatter(fileOrigin, (frontmatter) => fm = frontmatter);
-		if (fm) {
+		// Check and find the isolation file and get its content.
+		const isolationFile = this.app.vault.getFiles().find(file => file.path === this.settings.isolationFilePath);
+		if (!isolationFile) {
+			this.showFailNotice("No isolation file.");
+			return;
+		}
+		const isolationFileContent = await this.app.vault.read(isolationFile);
 
-			// Get the amount of lines we need to write.
-			const fmLength = Object.keys(fm).length + 2;
-			const isolationFileLineCount = this.app.workspace.activeEditor?.editor?.lineCount();
-			const isolatedFileAbstract = this.app.workspace.activeEditor?.file;
+		// Extract the frontmatter from the isolation file.
+		let isolationFileFm;
+		await this.app.fileManager
+			.processFrontMatter(isolationFile, (frontmatter) => isolationFileFm = frontmatter)
+			.catch(_ => this.showFailNotice("Processing frontmatter."));
+		if (!isolationFileFm) {
+			this.showFailNotice("Couldn't process frontmatter.");
+			return;
+		}
 
-			// Read the lines to transfer.
-			let linesToWrite = [];
-			for (let lineNr = fmLength; lineNr < isolationFileLineCount; lineNr++) {
-				linesToWrite.push(this.app.workspace.activeEditor?.editor?.getLine(lineNr));
-			}
-			const linesToWriteCount = linesToWrite.length;
+		// Extract the contents to write back from the isolation file.
+		const frontmatterMatch = isolationFileContent.match(/^---\n([\s\S]*?)\n---\n/);
+		if (!frontmatterMatch) {
+			this.showFailNotice("No text to write back from the isolation file.");
+			return;
+		}
+		const isolationFileText = isolationFileContent.replace(frontmatterMatch[0], "");
+		const isolationFileLines = isolationFileText.split("\n");
 
-			// Open the origin file and get the editor.
+		// Apply the offset.
+		const offsetIsolationFileLines = isolationFileLines.map(line => "\t".repeat(isolationFileFm.offset) + line);
+
+		// Check and get the origin file.
+		const originFilePath = isolationFileFm.origin;
+		const originFile = this.app.vault.getFiles().find(file => file.path === originFilePath);
+		if (!originFile) {
+			this.showFailNotice("Origin file doesn't exist.");
+			// return;
+		}
+		
+		// Write back the isolated content into the origin file.
+		const originFileContent = await this.app.vault.read(originFile);
+		const originFileLines = originFileContent.split("\n");
+		const originLinesToRemoveRange = isolationFileFm.endLine + 1 - isolationFileFm.startLine;
+		originFileLines.splice(isolationFileFm.startLine, originLinesToRemoveRange, ...offsetIsolationFileLines);
+		const modifiedOriginContent = originFileLines.join("\n");
+
+		// Apply the changes to the origin file.
+		await this.app.vault.modify(originFile, modifiedOriginContent);
+
+		// Open the origin file or the given file to open after.
+		if (openOriginFileAfter) {
 			needsWriteBackUnloadEvent = false;
-			const originFileAbstract = this.app.vault.getAbstractFileByPath(fm.origin);
-			// await this.openFileWithoutEvent(originFileAbstract);
-			await this.app.workspace.getLeaf().openFile(originFileAbstract);
-			const currentEditor = this.app.workspace.activeEditor?.editor;
-
-			// Free up the space in the origin file.
-			for (let lineNr = fm.startLine; lineNr < fm.endLine; lineNr++) {
-				currentEditor?.setLine(lineNr, "");
-			}
-			// TODO Check what if less lines.
-			if (linesToWriteCount > ((fm.endLine - fm.startLine) + 1)) {
-				// Set the last line to
-				const spacers = "\n".repeat(linesToWriteCount - ((fm.endLine - fm.startLine) + 1));
-				currentEditor?.setLine(fm.endLine, spacers);
-			}
-			else {
-				// Set the last line of the range to write to a simple space.
-				currentEditor?.setLine(fm.endLine, "");
-			}
-
-			// Transfer the lines from isolation to the new place.
-			for (let i = 0; i < linesToWriteCount; i++) {
-				const lineToWrite = fm.startLine + i;
-				currentEditor?.setLine(lineToWrite, "\t".repeat(fm.offset) + linesToWrite[i]);
-			}
-
-			// Delete the isolation file.
-			await this.app.vault.delete(isolatedFileAbstract);
-
-			needsWriteBackUnloadEvent = true;
-
+			await this.app.workspace.getLeaf().openFile(originFile);
 		}
-		else {
-			this.showNotice("couldn't process frontmatter")
-		}
+		
+		// Delete the isolation file.
+		await this.app.vault.delete(this.app.vault.getAbstractFileByPath(this.settings.isolationFilePath));
+
 	}
 
-	showNotice(msg, isFail: boolean = false) {
-		new Notice(isFail ? `BulletPointIsolation failed: ${msg}.` : msg);
+	showFailNotice(msg: string) {
+		new Notice("BulletPointIsolation failed: " + msg);
 	}
 
 	getBulletPointNr(elem) {

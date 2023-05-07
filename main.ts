@@ -4,23 +4,22 @@ import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Set
 // Remember to rename these classes and interfaces!
 
 interface BulletPointIsolatorSettings {
-	mySetting: string;
+	isolationFilePath: string;
 }
 
 const DEFAULT_SETTINGS: BulletPointIsolatorSettings = {
-	mySetting: 'default'
+	isolationFilePath: "isolation.md"
 }
 
 let needsWriteBackUnloadEvent = true;
 let lastOpenFilePath;
-
-const ISOLATION_FILE_PATH = "isolation.md";
 
 export default class BulletPointIsolator extends Plugin {
 	settings: BulletPointIsolatorSettings;
 
 	async onload() {
 		await this.loadSettings();
+		console.log("Settings", this.settings);
 
 		// This creates an icon in the left ribbon.
 		const ribbonIconEl = this.addRibbonIcon('dice', 'BulletPointIsolator Plugin', (evt: MouseEvent) => {
@@ -86,10 +85,10 @@ export default class BulletPointIsolator extends Plugin {
 			if (needsWriteBackUnloadEvent) {
 
 				// Checks that we just switched from the isolation file to another file.
-				if (lastOpenFilePath === ISOLATION_FILE_PATH && openedFile?.path !== ISOLATION_FILE_PATH) {
+				if (lastOpenFilePath === this.settings.isolationFilePath && openedFile?.path !== this.settings.isolationFilePath) {
 
 					// Check that the isolation file exists.
-					const isolationFile = this.app.vault.getFiles().find(file => file.path === ISOLATION_FILE_PATH);
+					const isolationFile = this.app.vault.getFiles().find(file => file.path === this.settings.isolationFilePath);
 					if (isolationFile) {
 
 						// First open the isolation file in the editor and write back.
@@ -127,7 +126,7 @@ export default class BulletPointIsolator extends Plugin {
 					this.showNotice("Bullet Point Isolator activated.");
 
 					// Check if the file origin is any file or the isolation file.
-					fileOriginPath === ISOLATION_FILE_PATH
+					fileOriginPath === this.settings.isolationFilePath
 						? await this.writeBackModifiedBulletPoint(evt)
 						: await this.isolateBulletPoint(evt);
 				}
@@ -203,12 +202,12 @@ export default class BulletPointIsolator extends Plugin {
 		bulletPointsText = frontmatter + bulletPointsText;
 
 		// Create the temporary file if it doesnt exist otherwise delete it first.
-		const isolatedFileAbstract = this.app.vault.getAbstractFileByPath(ISOLATION_FILE_PATH);
+		const isolatedFileAbstract = this.app.vault.getAbstractFileByPath(this.settings.isolationFilePath);
 		if (isolatedFileAbstract)
 			this.app.vault.delete(isolatedFileAbstract);
 
 		// Write the bullets to the temporary file.
-		const isolatedFile = await this.app.vault.create(ISOLATION_FILE_PATH, bulletPointsText);
+		const isolatedFile = await this.app.vault.create(this.settings.isolationFilePath, bulletPointsText);
 
 		// Create new leaf and open a file there.
 		await this.app.workspace.getLeaf().openFile(isolatedFile);
@@ -374,17 +373,16 @@ class BulletPointIsolatorSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		containerEl.createEl('h2', {text: 'Settings for my awesome plugin.'});
+		containerEl.createEl("h2", {text: "Bullet Point Isolator Plugin - Settings"});
 
 		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
+			.setName("Isolation file path")
+			.setDesc("The path where the isolation file should be created.")
 			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
+				.setPlaceholder("The path here...")
+				.setValue(this.plugin.settings.isolationFilePath)
 				.onChange(async (value) => {
-					console.log('Secret: ' + value);
-					this.plugin.settings.mySetting = value;
+					this.plugin.settings.isolationFilePath = value;
 					await this.plugin.saveSettings();
 				}));
 	}

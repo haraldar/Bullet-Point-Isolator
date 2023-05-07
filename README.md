@@ -1,11 +1,11 @@
-# Obsidian Sample Plugin
+# Obsidian Bullet Point Isolator
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+Using this plugin makes it possible to isolate a bullet point and its subbullets into a separate file, where they can be modified to your heart's content, then write the changes back to the original file upon leaving or closing or "ctrl+alt+click"-ing the root bullet point in the isolation file.
 
-This project uses Typescript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in Typescript Definition format, which contains TSDoc comments describing what it does.
 
-**Note:** The Obsidian API is still in early alpha and is subject to change at any time!
+## Why?
+
+A coworker demonstrated Logseq to me, which is different of a system compared to Obsidian, but it does have a neat feature that I found using myself a lot so I decided to make it into a working 
 
 This sample plugin demonstrates some of the basic functionality the plugin API can do.
 - Changes the default font color to red using `styles.css`.

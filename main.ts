@@ -1,4 +1,5 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, EditorPosition, TextFileView, DataWriteOptions, TFile, TAbstractFile, MarkdownFileInfo } from 'obsidian';
+import { start } from 'repl';
 
 
 // Remember to rename these classes and interfaces!
@@ -11,6 +12,7 @@ const DEFAULT_SETTINGS: BulletPointIsolatorSettings = {
 	isolationFilePath: "isolation.md"
 }
 
+
 let needsWriteBackUnloadEvent = true;
 let lastOpenFilePath;
 
@@ -22,26 +24,30 @@ export default class BulletPointIsolator extends Plugin {
 		console.log("Settings", this.settings);
 
 		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'BulletPointIsolator Plugin', (evt: MouseEvent) => {
+		const ribbonIconEl = this.addRibbonIcon("dice", "BulletPointIsolator Plugin", (evt: MouseEvent) => {
 			// Called when the user clicks the icon.
-			new Notice('This is a notice i guess!');
+			new Notice("Bullet Point Isolator.");
 		});
 		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
+		ribbonIconEl.addClass("my-plugin-ribbon-class");
 
 		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
 		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
+		statusBarItemEl.setText("Status Bar Text");
 
-		// // Triggers isolation.
-		// this.addCommand({
-		// 	id: "bullet-point-isolator-isolate",
-		// 	name: "Isolate",
-		// 	callback: () => {
-		// 		// new BulletPointIsolatorModal(this.app).open();
-		// 		console.log("Triggered isolation.");
-		// 	}
-		// });
+		// Triggers isolation.
+		this.addCommand({
+			id: "bullet-point-isolator-isolate",
+			name: "Isolate",
+			// editorCallback: async (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
+
+			// 	new Notice("Bullet Point Isolator: Isolation activated per command.");
+
+			// 	// Write back.
+			// 	await this.writeBackModifiedBulletPoint(null, true);
+			// }
+		});
+
 		// Triggers writing back.
 		this.addCommand({
 			id: "bullet-point-isolator-write-back",
@@ -54,7 +60,7 @@ export default class BulletPointIsolator extends Plugin {
 					// Checks that we just switched from the isolation file to another file.
 					if (ctx.file?.path === this.settings.isolationFilePath) {
 
-						new Notice("Bullet Point Isolator: Isolation activated per command.");
+						new Notice("Bullet Point Isolator: Write Back activated per command.");
 
 						// Write back.
 						await this.writeBackModifiedBulletPoint(null, true);
@@ -63,25 +69,6 @@ export default class BulletPointIsolator extends Plugin {
 				}
 			}
 		});
-		// // This adds a complex command that can check whether the current state of the app allows execution of the command
-		// this.addCommand({
-		// 	id: 'open-sample-modal-complex',
-		// 	name: 'Open sample modal (complex)',
-		// 	checkCallback: (checking: boolean) => {
-		// 		// Conditions to check
-		// 		const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-		// 		if (markdownView) {
-		// 			// If checking is true, we're simply "checking" if the command can be run.
-		// 			// If checking is false, then we want to actually perform the operation.
-		// 			if (!checking) {
-		// 				new BulletPointIsolatorModal(this.app).open();
-		// 			}
-
-		// 			// This command will only show up in Command Palette when the check function returns true
-		// 			return true;
-		// 		}
-		// 	}
-		// });
 
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new BulletPointIsolatorSettingTab(this.app, this));
@@ -120,6 +107,7 @@ export default class BulletPointIsolator extends Plugin {
 
 		// Register a DOM onclick event for if isolate or write back a bullet point.
 		this.registerDomEvent(document, 'click', async (evt: MouseEvent) => {
+
 			if (evt.altKey && evt.ctrlKey && this.getBulletPointNr(evt.target.parentNode)) {
 
 				// Get some infos about the file in focus.
@@ -142,15 +130,12 @@ export default class BulletPointIsolator extends Plugin {
 					else {
 						new Notice("Bullet Point Isolator: Isolation activated manually.");
 						console.log("Bullet Point Isolator: Isolation activated manually.");
-						await this.isolateBulletPoint(evt);
+						await this.isolateBulletPoint();
 					}
 				}
-
 			}
-		});
 
-		// // When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		// this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		});
 	}
 	
 
@@ -160,61 +145,85 @@ export default class BulletPointIsolator extends Plugin {
 		needsWriteBackUnloadEvent = true;
 	}
 
-	async isolateBulletPoint(evt: MouseEvent) {
+	// // Here I need to find out what element type we are dealing with and return it or null.
+	// checkMdElement(text: string) {
 
-		const currentFocusLine = this.app.workspace.activeEditor?.editor?.getCursor().line;
+	// }
 
+	checkIsBulletPoint(text: string): boolean {
+		return text.trim().startsWith("- ");
+	}
+
+	extractBulletPoints(lines: string[], startLine: number, normalized: boolean) {
+
+		// Remove the first startLine elements.
+		lines.splice(0, startLine);
+
+		// Get the first line and its offset in terms of tabs.
+		const firstLine = lines.shift();
+		const firstOffset = firstLine?.match(/^\t*/)[0].length;
+
+		// Go through all following lines until one in not a bullet point or starts with equal or less tabs.
+		let bullets = [firstLine];
+		for (let lineNr in lines) {
+			const lineOffset = lines[lineNr].match(/^\t*/)[0].length;
+			const isBulletPoint = lines[lineNr].trim().startsWith("- ");
+			if (!isBulletPoint || lineOffset <= firstOffset) {
+				break;
+			}
+			bullets.push(lines[lineNr]);
+		}
+		
+		return {
+			"bullets": normalized ? bullets.map(b => b.substring(firstOffset)) : bullets,
+			"offset": firstOffset
+		};
+	}
+
+	async isolateBulletPoint() {
+
+		// const currentFocusLine = this.app.workspace.activeEditor?.editor?.getCursor().line;
+		const focusFilePath = this.app.workspace.activeEditor?.file?.path;
+		
 		// A selected line is required.
-		if (currentFocusLine === undefined || currentFocusLine === null) {
+		const focusLineNr = this.app.workspace.activeEditor?.editor?.getCursor().line;
+		if (!focusLineNr) {
 			this.showFailNotice("No line in focus.");
 			return;
 		}
-
-		// The selected file must contain a bullet point.
-		const isBulletPoint = this.getBulletPointNr(evt.target.parentNode);
-		if (isBulletPoint === null) {
-			this.showFailNotice("Line in focus doesn't have bullet point.");
+		
+		// Check if line is a supported markdown element.
+		const focusLineContent = this.app.workspace.activeEditor?.editor?.getLine(focusLineNr);
+		const isBulletPoint = this.checkIsBulletPoint(focusLineContent);
+		if (!isBulletPoint) {
+			this.showFailNotice("Not a supported MarkDown element.");
 			return;
 		}
-		// Get all the bullet and subbullet points.
-		const bulletPointsCount = this.countBulletPointLines(evt.target.parentNode);
 
-		// Get current active line.
-		let rootLine = this.app.workspace.activeEditor?.editor?.getLine(currentFocusLine);
-
-		// Get the root offset and normalize the first line.
-		const rootOffset = rootLine?.match(/^\s*/)[0].length;
-		if (rootOffset >= 1)
-			rootLine = rootLine.substring(rootOffset);
-
-		// Iterate through the lines affected by the click.
-		let linesToIsolate = [rootLine];
-		for (let i = 1; i < bulletPointsCount; i++) {
-
-			// Get the line.
-			let lineToIsolate = this.app.workspace.activeEditor?.editor?.getLine(currentFocusLine + i);
-
-			// Normalize the leading spaces and if it is a space then replace it with tabs.
-			if (rootOffset >= 1) {
-				lineToIsolate = lineToIsolate?.substring(rootOffset);
-			}
-
-			// Push the line to the array.
-			linesToIsolate.push(lineToIsolate);
+		// Get the focus file.
+		const focusFile = this.app.vault.getFiles().find(file => file.path === focusFilePath);
+		if (!focusFile) {
+			this.showFailNotice("Focus file doesn't exist.");
+			return;
 		}
+
+		// Get all the bullet and subbullet points.
+		const focusFileContent = await this.app.vault.read(focusFile);
+		const focusFileLines = focusFileContent.split("\n");
+		const extractedBulletPoints = this.extractBulletPoints(focusFileLines, focusLineNr, true);
+
+		// Create the frontmatter.
+		const frontmatterLines = [
+			"---",
+			`origin: ${this.app.workspace.activeEditor?.file?.path}`,
+			`startLine: ${focusLineNr}`,
+			`endLine: ${focusLineNr + extractedBulletPoints.bullets.length - 1}`,
+			`offset: ${extractedBulletPoints.offset}`,
+			"---"
+		]
 
 		// Join the lines to use them inside the create function later.
-		let bulletPointsText = linesToIsolate.join("\n");
-
-		// Add some frontmatter to the bulletpoint to copy.
-		const frontmatterJson = {
-			"origin": this.app.workspace.activeEditor?.file?.path,
-			"startLine": currentFocusLine,
-			"endLine": currentFocusLine + bulletPointsCount - 1,
-			"offset": rootOffset
-		}
-		const frontmatter = this.convertJsonToFrontmatter(frontmatterJson);
-		bulletPointsText = frontmatter + bulletPointsText;
+		const contentToIsolate = [...frontmatterLines, ...extractedBulletPoints.bullets].join("\n");
 
 		// Create the temporary file if it doesnt exist otherwise delete it first.
 		const isolatedFileAbstract = this.app.vault.getAbstractFileByPath(this.settings.isolationFilePath);
@@ -222,7 +231,7 @@ export default class BulletPointIsolator extends Plugin {
 			this.app.vault.delete(isolatedFileAbstract);
 
 		// Write the bullets to the temporary file.
-		const isolatedFile = await this.app.vault.create(this.settings.isolationFilePath, bulletPointsText);
+		const isolatedFile = await this.app.vault.create(this.settings.isolationFilePath, contentToIsolate);
 
 		// Create new leaf and open a file there.
 		await this.app.workspace.getLeaf().openFile(isolatedFile);

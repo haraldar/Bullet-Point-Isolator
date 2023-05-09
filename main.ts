@@ -21,7 +21,6 @@ export default class BulletPointIsolator extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
-		console.log("Settings", this.settings);
 
 		// This creates an icon in the left ribbon.
 		const ribbonIconEl = this.addRibbonIcon("dice", "BulletPointIsolator Plugin", (evt: MouseEvent) => {
@@ -108,10 +107,15 @@ export default class BulletPointIsolator extends Plugin {
 		// Register a DOM onclick event for if isolate or write back a bullet point.
 		this.registerDomEvent(document, 'click', async (evt: MouseEvent) => {
 
-			if (evt.altKey && evt.ctrlKey && this.getBulletPointNr(evt.target.parentNode)) {
+			// Get current file line.
+			const currentEditor = this.app.workspace.activeEditor;
+			const focusLine = currentEditor?.editor?.getCursor().line;
+			const focusLineContent = currentEditor?.editor?.getLine(focusLine);
+
+			if (evt.altKey && evt.ctrlKey && this.checkIsBulletPoint(focusLineContent)) {
 
 				// Get some infos about the file in focus.
-				const fileOriginPath = this.app.workspace.activeEditor?.file?.path;
+				const fileOriginPath = currentEditor?.file?.path;
 
 				// Check if the file is defined or not.
 				if (!fileOriginPath) {
@@ -124,12 +128,10 @@ export default class BulletPointIsolator extends Plugin {
 					// Check if the file origin is any file or the isolation file.
 					if (fileOriginPath === this.settings.isolationFilePath) {
 						new Notice("Bullet Point Isolator: Write back activated manually.");
-						console.log("Bullet Point Isolator: Write back activated manually.");
 						await this.writeBackModifiedBulletPoint(evt, true);
 					}
 					else {
 						new Notice("Bullet Point Isolator: Isolation activated manually.");
-						console.log("Bullet Point Isolator: Isolation activated manually.");
 						await this.isolateBulletPoint();
 					}
 				}
@@ -155,9 +157,8 @@ export default class BulletPointIsolator extends Plugin {
 	}
 
 	extractBulletPoints(lines: string[], startLine: number, normalized: boolean) {
-
-		// Remove the first startLine elements.
-		lines.splice(0, startLine);
+		
+		lines.splice(0, startLine);		
 
 		// Get the first line and its offset in terms of tabs.
 		const firstLine = lines.shift();
@@ -242,14 +243,19 @@ export default class BulletPointIsolator extends Plugin {
 
 		// Check the event target if an event is supplied.
 		if (evt) {
+
+			// If event then there must be a line in focus.
+			const currentEditor = this.app.workspace.activeEditor?.editor;
+			const focusLine = currentEditor?.getCursor().line;
+			const focusLineContent = currentEditor?.getLine(focusLine);
 			
-			// The selected file must contain a bullet point.
-			const bulletPointNr = this.getBulletPointNr(evt.target.parentNode);
+			// To trigger a write back with a mouse event the user must click on a bullet point.
+			const bulletPointNr = this.checkIsBulletPoint(focusLineContent);
 			if (bulletPointNr === null) {
 				this.showFailNotice("Line in focus doesn't have bullet point.");
 				return;
 			}
-			else if ( bulletPointNr !== 1) {
+			else if (this.extractBulletPoints([focusLineContent], 0, true).offset !== 0) {
 				this.showFailNotice("Line in focus isn't root bullet point.");
 				return;
 			}
@@ -317,36 +323,6 @@ export default class BulletPointIsolator extends Plugin {
 
 	showFailNotice(msg: string) {
 		new Notice("BulletPointIsolation failed: " + msg);
-	}
-
-	getBulletPointNr(elem) {
-		const match = elem.className.match(/HyperMD-list-line-(\d+)/);
-		return match ? parseInt(match[1]) : null;
-	}
-
-	countBulletPointLines(elem) {
-
-		// Set the passed element as initial sibling and het its offset number.
-		let sibling = elem;
-		const rootOffset = this.getBulletPointNr(sibling);
-
-		let siblingCount = 1;
-		while (sibling.nextSibling !== null) {
-
-
-			// Set the sibling as its next sibling.
-			sibling = sibling.nextSibling;
-
-			// If the offset number is equal or less, break the loop.
-			const siblingOffset = this.getBulletPointNr(sibling);
-			if (rootOffset >= siblingOffset)
-				break;
-
-			// Increment the siblings count.
-			siblingCount++;
-		}
-
-		return siblingCount;
 	}
 
 	convertJsonToFrontmatter(obj, pendingNewline: boolean = true) {

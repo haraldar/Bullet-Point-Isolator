@@ -43,13 +43,13 @@ export default class BulletPointIsolator extends Plugin {
 		this.addCommand({
 			id: "bullet-point-isolator-isolate",
 			name: "Isolate",
-			// editorCallback: async (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
+			editorCallback: async (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
 
-			// 	new Notice("Bullet Point Isolator: Isolation activated per command.");
+				new Notice("Bullet Point Isolator: Isolation activated per command.");
 
-			// 	// Write back.
-			// 	await this.writeBackModifiedBulletPoint(null, true);
-			// }
+				// Isolate.
+				await this.isolateBulletPoint();
+			}
 		});
 
 		// Triggers writing back.
@@ -68,7 +68,6 @@ export default class BulletPointIsolator extends Plugin {
 
 						// Write back.
 						await this.writeBackModifiedBulletPoint(null, true);
-
 					}
 				}
 			}
@@ -194,7 +193,7 @@ export default class BulletPointIsolator extends Plugin {
 		
 		// A selected line is required.
 		const focusLineNr = this.app.workspace.activeEditor?.editor?.getCursor().line;
-		if (!focusLineNr) {
+		if (focusLineNr === undefined || focusLineNr < 0) {
 			this.showFailNotice("No line in focus.");
 			return;
 		}

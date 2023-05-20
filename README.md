@@ -1,4 +1,4 @@
-# Obsidian z
+# Obsidian Bullet Point Isolator Plugin
 
 Increase your file content overview while editing drastically: Isolate MarkDown elements and its subcontent like headers, bullet points, tasks, etc. from the main file into an isolation file, edit them there and then automatically or manually write the changes back to the original file!
 

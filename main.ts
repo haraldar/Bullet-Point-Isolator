@@ -5,10 +5,14 @@ import { start } from 'repl';
 // Remember to rename these classes and interfaces!
 
 interface BulletPointIsolatorSettings {
+	isolationFileName: string;
+	isolationFileFolder: string;
 	isolationFilePath: string;
 }
 
 const DEFAULT_SETTINGS: BulletPointIsolatorSettings = {
+	isolationFileName: "isolation.md",
+	isolationFileFolder: "/",
 	isolationFilePath: "isolation.md"
 }
 
@@ -17,6 +21,7 @@ let needsWriteBackUnloadEvent = true;
 let lastOpenFilePath;
 
 export default class BulletPointIsolator extends Plugin {
+	
 	settings: BulletPointIsolatorSettings;
 
 	async onload() {
@@ -158,6 +163,7 @@ export default class BulletPointIsolator extends Plugin {
 
 	extractBulletPoints(lines: string[], startLine: number, normalized: boolean) {
 		
+		// Remove the first number of lines from the main content
 		lines.splice(0, startLine);		
 
 		// Get the first line and its offset in terms of tabs.
@@ -349,6 +355,7 @@ export default class BulletPointIsolator extends Plugin {
 }
 
 class BulletPointIsolatorModal extends Modal {
+
 	constructor(app: App) {
 		super(app);
 	}
@@ -365,6 +372,7 @@ class BulletPointIsolatorModal extends Modal {
 }
 
 class BulletPointIsolatorSettingTab extends PluginSettingTab {
+
 	plugin: BulletPointIsolator;
 
 	constructor(app: App, plugin: BulletPointIsolator) {
@@ -372,7 +380,15 @@ class BulletPointIsolatorSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	updateIsolationFilePath(): void {
+		this.plugin.settings.isolationFilePath = 
+			(this.plugin.settings.isolationFileFolder === "/")
+				? this.plugin.settings.isolationFileName
+				: this.plugin.settings.isolationFileFolder + this.plugin.settings.isolationFileName;
+	}
+
 	display(): void {
+
 		const {containerEl} = this;
 
 		containerEl.empty();
@@ -380,14 +396,33 @@ class BulletPointIsolatorSettingTab extends PluginSettingTab {
 		containerEl.createEl("h2", {text: "Bullet Point Isolator Plugin - Settings"});
 
 		new Setting(containerEl)
-			.setName("Isolation file path")
-			.setDesc("The path where the isolation file should be created.")
+			.setName("Isolation file name")
+			.setDesc("The name of the isolation file.")
 			.addText(text => text
-				.setPlaceholder("The path here...")
-				.setValue(this.plugin.settings.isolationFilePath)
+				.setPlaceholder("The name of the isolation file.")
+				.setValue(this.plugin.settings.isolationFileName)
 				.onChange(async (value) => {
-					this.plugin.settings.isolationFilePath = value;
+					this.plugin.settings.isolationFileName = value;
+					this.updateIsolationFilePath();
+					console.log(this.plugin.settings);
 					await this.plugin.saveSettings();
 				}));
+
+		new Setting(containerEl)
+			.setName("Isolation file folder path")
+			.setDesc("The path where the isolation file should be created.")
+			.addDropdown(dropdown => {
+				const folders = this.app.vault.getFiles().map(file => file.parent?.path).unique();
+				folders.forEach(folder => dropdown.addOption(folder, folder));
+				dropdown
+					.setValue(this.plugin.settings.isolationFileFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.isolationFileFolder = value;
+						this.updateIsolationFilePath();
+						console.log(this.plugin.settings);
+						await this.plugin.saveSettings();
+					})
+			});
+
 	}
 }
